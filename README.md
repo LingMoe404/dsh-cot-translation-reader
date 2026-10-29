@@ -1,6 +1,6 @@
 # dsh-cot-translation-reader
 
-在 **dsh-better-display** 的「阅读」页签里显示 DeepSeek Harness 官方「思考过程机器翻译」的译文。
+在 [**dsh-better-display**](https://github.com/aa2246740/dsh-better-display) 的「阅读」页签里显示 DeepSeek Harness 官方「思考过程机器翻译」的译文。
 
 官方 COT 翻译组合包把译文注册在 `conversation.chat.reasoning.body` 插槽上，而阅读页用自己的组件渲染思考，所以那个插槽在阅读页里永远不会渲染——装了翻译包看起来却像没翻译。本插件补上这段适配：注册到 reading view 的 `dsh-better-display.text-transform` 缝，把译文交给阅读页绘制。
 
@@ -8,8 +8,8 @@
 
 | 组件 | 作用 |
 | --- | --- |
-| `dsh-better-display` ≥ **0.3.9** | 提供 `dsh-better-display.text-transform` 缝 |
-| `@deepseek-ai/dsh-experimental-cot-translation-bundle` | 提供 `cotTranslation` 服务与翻译设置（翻译服务、目标语言） |
+| [`dsh-better-display`](https://github.com/aa2246740/dsh-better-display) ≥ **0.3.9** | 提供 `dsh-better-display.text-transform` 缝 |
+| [`@deepseek-ai/dsh-experimental-cot-translation-bundle`](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle) | 提供 `cotTranslation` 服务与翻译设置（翻译服务、目标语言） |
 
 两个都缺任意一个时，本插件**安静地不生效**，不报错、不改界面。
 
@@ -55,6 +55,11 @@ npm run build     # 需要 tsdown + 内置的 tools/client-build.js
 ```
 
 `tools/client-build.js` 是从 DeepSeek Harness 公共构建产物里复刻的客户端打包配方（见文件头注释），因此构建不需要完整的 Harness 源码树。
+
+## 相关
+
+- [dsh-better-display](https://github.com/aa2246740/dsh-better-display)：提供 `dsh-better-display.text-transform` 缝的阅读页插件
+- [@deepseek-ai/dsh-experimental-cot-translation-bundle](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle)：官方思考翻译组合包，翻译服务与目标语言在它的插件面板里设置
 
 ## 许可
 
