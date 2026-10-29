@@ -60,6 +60,9 @@ const PARAGRAPH_BREAK = /\n[ \t]*\n[ \t]*/g;
 /** Mounted blocks retained before the oldest is dropped. */
 const MAX_BLOCKS = 40;
 
+/** Cooldown before retrying limits after a failed read (ms). */
+const RETRY_MS = 8000;
+
 /**
  * Split reasoning into request-sized fragments.
  *
@@ -142,7 +145,7 @@ export function createReasoningTransformer(
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
   let disposed = false;
-  let unavailable = false;
+  let retryAt = 0;
   let target: TranslationTarget | undefined;
   let preparing: Promise<void> | undefined;
 
@@ -157,14 +160,15 @@ export function createReasoningTransformer(
   };
 
   const prepare = () => {
-    if (target || preparing || unavailable) return;
+    if (target || preparing) return;
+    if (Date.now() < retryAt) return;
     preparing = client.limits(new AbortController().signal).then((limits) => {
       target = limits;
       notify();
     }).catch((error: unknown) => {
-      // A missing route (official bundle off) or a failed read is not retried
-      // on every paint; the source text simply stays on screen.
-      unavailable = true;
+      // Not permanent: the first paint can run before the Host half (or the
+      // official bundle's service) is up, and a later paint must be able to retry.
+      retryAt = Date.now() + RETRY_MS;
       if (!disposed) onError(error);
     }).finally(() => {
       preparing = undefined;
@@ -232,7 +236,7 @@ export function createReasoningTransformer(
 
   const transformer: DisplayTextTransformer = {
     read(request) {
-      if (disposed || unavailable || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
+      if (disposed || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
       const entry = ensure(request.blockKey);
       if (entry.source !== request.text || entry.streaming !== request.streaming) {
         entry.source = request.text;

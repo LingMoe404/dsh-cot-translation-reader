@@ -39,7 +39,11 @@ export const inject = ['webServer'];
 
 const ROUTE_LIMITS = '/cot-translation-reader/limits';
 const ROUTE_TRANSLATE = '/cot-translation-reader/translate';
+const ROUTE_STATUS = '/cot-translation-reader/status';
 const MAX_BODY_BYTES = 64 * 1024;
+
+/** Call counters, so a restart can be checked from outside the browser. */
+const calls = { limits: 0, translate: 0, lastError: '' as string };
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.setHeader('Content-Type', 'application/json');
@@ -97,8 +101,10 @@ export function apply(ctx: Context): () => void {
         res.end();
         return;
       }
+      calls.limits += 1;
       const current = service();
       if (!current) {
+        calls.lastError = 'cot-translation-unavailable';
         sendJson(res, 503, { error: 'cot-translation-unavailable' });
         return;
       }
@@ -109,7 +115,8 @@ export function apply(ctx: Context): () => void {
           provider: snapshot.preferences.provider,
           targetLanguage: snapshot.preferences.targetLanguage,
         });
-      } catch {
+      } catch (error) {
+        calls.lastError = error instanceof Error ? error.message : String(error);
         sendJson(res, 502, { error: 'limits-failed' });
       }
     },
@@ -126,6 +133,7 @@ export function apply(ctx: Context): () => void {
       }
       const current = service();
       if (!current) {
+        calls.lastError = 'cot-translation-unavailable';
         sendJson(res, 503, { error: 'cot-translation-unavailable' });
         return;
       }
@@ -155,15 +163,31 @@ export function apply(ctx: Context): () => void {
           },
           new AbortController().signal,
         );
+        calls.translate += 1;
         sendJson(res, 200, { text: translated });
-      } catch {
+      } catch (error) {
+        calls.lastError = error instanceof Error ? error.message : String(error);
         sendJson(res, 502, { error: 'translate-failed' });
       }
+    },
+  });
+
+  const disposeStatus = server.register({
+    kind: 'exact',
+    path: ROUTE_STATUS,
+    handler: (req, res) => {
+      if (req.method !== 'GET') {
+        res.statusCode = 405;
+        res.end();
+        return;
+      }
+      sendJson(res, 200, { ...calls, available: service() !== undefined });
     },
   });
 
   return () => {
     disposeLimits();
     disposeTranslate();
+    disposeStatus();
   };
 }
