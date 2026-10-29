@@ -61,6 +61,22 @@ async function readBody(req: IncomingMessage): Promise<string> {
 }
 
 /**
+ * Resolve `auto` to a concrete tag.
+ *
+ * The official browser half resolves `auto` from the UI locale before it calls
+ * the Host; this route has no UI locale, so it uses the request's
+ * `Accept-Language`. Providers reject `to=auto` outright (Bing answers 400),
+ * so leaving it unresolved would fail every request.
+ */
+function targetLanguageOf(req: IncomingMessage, requested: string): string {
+  if (requested !== 'auto') return requested;
+  const header = req.headers['accept-language'];
+  const raw = Array.isArray(header) ? header[0] : header;
+  const first = raw?.split(',')[0]?.split(';')[0]?.trim();
+  return first && first.length > 0 ? first : 'en';
+}
+
+/**
  * Register the translation routes.
  *
  * @param ctx - Host plugin context.
@@ -134,7 +150,7 @@ export function apply(ctx: Context): () => void {
         const translated = await current.translate(
           {
             text,
-            targetLanguage: snapshot.preferences.targetLanguage,
+            targetLanguage: targetLanguageOf(req, snapshot.preferences.targetLanguage),
             provider: snapshot.preferences.provider,
           },
           new AbortController().signal,
