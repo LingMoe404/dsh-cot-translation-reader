@@ -3,10 +3,9 @@
  *
  * The reading view exposes `dsh-better-display.text-transform`; a registrant
  * returns the string it wants painted and never touches the session, the
- * transcript, or the fold. Translation therefore lives here, not in that
- * plugin: this module reads the official COT translation Remote and hands the
- * reading view a translated string plus a subscription that says when a later
- * batch changed it.
+ * transcript, or the fold. Translation therefore lives here: the Host half
+ * exposes `cotTranslation` over two same-origin routes (the service itself is
+ * Host-only), and this module turns their answers into painted text.
  */
 /** Kinds the reading view offers; only reasoning is translated here. */
 export type DisplayTextKind = 'reasoning' | 'body';
@@ -24,7 +23,7 @@ export interface DisplayText {
     /** `false` keeps the live reveal open; `true` settles it. */
     readonly final: boolean;
 }
-/** Seam contract from `docs/extension-points.md`. */
+/** Seam contract from dsh-better-display's `docs/extension-points.md`. */
 export interface DisplayTextTransformer {
     read(request: DisplayTextRequest): DisplayText | undefined;
     subscribe?(listener: () => void): () => void;
@@ -35,20 +34,10 @@ export interface TranslationTarget {
     readonly provider: string;
     readonly targetLanguage: string;
 }
-/** Structural face of `ctx.cotTranslation` (`@deepseek-ai/dsh-experimental-client-ui-cot-translation`). */
-export interface CotTranslationService {
-    limits(signal: AbortSignal): Promise<{
-        readonly maxTextChars: number;
-        readonly preferences: {
-            readonly provider: string;
-            readonly targetLanguage: string;
-        };
-    }>;
-    translate(request: {
-        readonly text: string;
-        readonly targetLanguage: string;
-        readonly provider?: string;
-    }, signal: AbortSignal): Promise<string>;
+/** Same-origin calls into the Host half. */
+export interface TranslationClient {
+    limits(signal: AbortSignal): Promise<TranslationTarget>;
+    translate(text: string, signal: AbortSignal): Promise<string>;
 }
 /** One translated slice of the source. */
 export interface ReasoningFragment {
@@ -75,7 +64,7 @@ export declare function reasoningFragments(text: string, running: boolean, maxTe
     tail: string;
 };
 /** Build the transformer the reading view registers, plus a disposer. */
-export declare function createReasoningTransformer(service: () => CotTranslationService | undefined, onError?: (error: unknown) => void): {
+export declare function createReasoningTransformer(client: TranslationClient, onError?: (error: unknown) => void): {
     transformer: DisplayTextTransformer;
     dispose: () => void;
 };
