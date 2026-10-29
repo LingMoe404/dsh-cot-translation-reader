@@ -16,10 +16,13 @@
 ## 安装
 
 ```sh
-# 从 GitHub 安装（pnpm 会按 package.json 的 dsh 字段挂载）
+# npm（推荐）
+pnpm add dsh-cot-translation-reader
+
+# 从 GitHub 安装（跟踪 main，不用等发布）
 pnpm add github:LingMoe404/dsh-cot-translation-reader
 
-# 或本地目录
+# 本地目录
 pnpm add file:../dsh-cot-translation-reader
 ```
 
@@ -32,6 +35,15 @@ pnpm add file:../dsh-cot-translation-reader
 - 翻译失败时保留原文并在控制台 `warn`，不会打断阅读。
 - 逐段请求，单次长度遵守 Host 返回的 `maxTextChars`；同一段译文不会重复请求。
 - 关闭插件或卸载时中止进行中的请求。
+
+## 发布
+
+推一个 `v*` tag 就会发布：`.github/workflows/publish.yml` 通过 npm **Trusted Publishing（OIDC）**换取短期凭据，仓库和本机都不保存任何 npm token，也不需要动态码。
+
+```sh
+git tag -a v0.1.2 -m "v0.1.2"
+git push origin v0.1.2
+```
 
 ## 开发
 
