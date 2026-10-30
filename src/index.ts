@@ -32,6 +32,18 @@ interface CotTranslation {
   ): Promise<string>;
 }
 
+/**
+ * Structural face of the Host-side `translator` service.
+ *
+ * `cotTranslation` wraps every failure into one opaque message, so the route
+ * calls the translator directly and keeps the real error code.
+ */
+interface Translator {
+  readonly maxTextChars?: number;
+  resolve(request: { text: string; targetLanguage: string; provider?: string }): unknown;
+  translate(spec: unknown, signal?: AbortSignal): Promise<string>;
+}
+
 export const name = 'cot-translation-reader';
 
 /** Routes exist only while the Host is mounted, so wait for the web server. */
@@ -89,8 +101,11 @@ function targetLanguageOf(req: IncomingMessage, requested: string): string {
 export function apply(ctx: Context): () => void {
   const server = ctx.webServer;
   if (!server) return () => {};
-  const service = (): CotTranslation | undefined =>
-    (ctx as unknown as { get?: (name: string) => unknown }).get?.call(ctx, 'cotTranslation') as CotTranslation | undefined;
+  const lookup = <T>(name: string): T | undefined =>
+    (ctx as unknown as { get?: (key: string) => unknown }).get?.call(ctx, name) as T | undefined;
+  const service = (): CotTranslation | undefined => lookup<CotTranslation>('cotTranslation');
+  const translator = (): Translator | undefined => lookup<Translator>('translator');
+  const available = () => translator() !== undefined || service() !== undefined;
 
   const disposeLimits = server.register({
     kind: 'exact',
@@ -104,8 +119,19 @@ export function apply(ctx: Context): () => void {
       calls.limits += 1;
       const current = service();
       if (!current) {
-        calls.lastError = 'cot-translation-unavailable';
-        sendJson(res, 503, { error: 'cot-translation-unavailable' });
+        // Preferences belong to the official bundle; without it, fall back to
+        // the translator's own limit and default routing.
+        const t = translator();
+        if (!t) {
+          calls.lastError = 'translation-unavailable';
+          sendJson(res, 503, { error: 'translation-unavailable' });
+          return;
+        }
+        sendJson(res, 200, {
+          maxTextChars: t.maxTextChars ?? 4000,
+          provider: 'bing',
+          targetLanguage: 'auto',
+        });
         return;
       }
       try {
@@ -132,9 +158,10 @@ export function apply(ctx: Context): () => void {
         return;
       }
       const current = service();
-      if (!current) {
-        calls.lastError = 'cot-translation-unavailable';
-        sendJson(res, 503, { error: 'cot-translation-unavailable' });
+      const direct = translator();
+      if (!current && !direct) {
+        calls.lastError = 'translation-unavailable';
+        sendJson(res, 503, { error: 'translation-unavailable' });
         return;
       }
       let text = '';
@@ -154,19 +181,25 @@ export function apply(ctx: Context): () => void {
       try {
         // Preferences live in the official bundle's settings, so read them per
         // request instead of caching a copy that can drift.
-        const snapshot = await current.limits(new AbortController().signal);
-        const translated = await current.translate(
-          {
-            text,
-            targetLanguage: targetLanguageOf(req, snapshot.preferences.targetLanguage),
-            provider: snapshot.preferences.provider,
-          },
-          new AbortController().signal,
-        );
+        let requested = 'auto';
+        let provider: string | undefined;
+        if (current) {
+          const snapshot = await current.limits(new AbortController().signal);
+          requested = snapshot.preferences.targetLanguage;
+          provider = snapshot.preferences.provider;
+        }
+        const targetLanguage = targetLanguageOf(req, requested);
+        // Prefer the translator: cotTranslation rewrites every failure into one
+        // opaque message, which leaves nothing to diagnose.
+        const translated = direct
+          ? await direct.translate(direct.resolve({ text, targetLanguage, provider }), new AbortController().signal)
+          : await current!.translate({ text, targetLanguage, provider }, new AbortController().signal);
         calls.translate += 1;
         sendJson(res, 200, { text: translated });
       } catch (error) {
-        calls.lastError = error instanceof Error ? error.message : String(error);
+        const code = (error as { code?: unknown }).code;
+        const message = error instanceof Error ? error.message : String(error);
+        calls.lastError = typeof code === 'string' ? `${code}: ${message}` : message;
         sendJson(res, 502, { error: 'translate-failed' });
       }
     },
@@ -181,7 +214,7 @@ export function apply(ctx: Context): () => void {
         res.end();
         return;
       }
-      sendJson(res, 200, { ...calls, available: service() !== undefined });
+      sendJson(res, 200, { ...calls, available: available() });
     },
   });
 
