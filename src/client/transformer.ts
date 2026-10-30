@@ -63,6 +63,9 @@ const MAX_BLOCKS = 40;
 /** Cooldown before retrying limits after a failed read (ms). */
 const RETRY_MS = 8000;
 
+/** Automatic retries for one fragment after a transient provider failure. */
+const MAX_RETRIES = 3;
+
 /**
  * Split reasoning into request-sized fragments.
  *
@@ -134,6 +137,7 @@ interface Entry {
   pending: boolean;
   scheduled: boolean;
   dirty: boolean;
+  failures: number;
   controller?: AbortController;
 }
 
@@ -141,13 +145,27 @@ interface Entry {
 export function createReasoningTransformer(
   client: TranslationClient,
   onError: (error: unknown) => void = () => {},
-): { transformer: DisplayTextTransformer; dispose: () => void } {
+): {
+  transformer: DisplayTextTransformer;
+  /** Switch every reasoning card between the translation and its source. */
+  setShowOriginal(value: boolean): void;
+  getShowOriginal(): boolean;
+  dispose(): void;
+} {
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
   let disposed = false;
+  let showingOriginal = false;
   let retryAt = 0;
   let target: TranslationTarget | undefined;
   let preparing: Promise<void> | undefined;
+  /** One request at a time: bursts are what the anonymous provider pushes back on. */
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <T>(task: () => Promise<T>): Promise<T> => {
+    const next = chain.then(task, task);
+    chain = next.then(() => undefined, () => undefined);
+    return next;
+  };
 
   const notify = () => {
     for (const listener of [...listeners]) {
@@ -194,15 +212,24 @@ export function createReasoningTransformer(
       for (let index = 0; index < entry.fragments.length; index += 1) {
         const fragment = entry.fragments[index];
         if (entry.results.has(fragment.body) || fragment.body.trim() === '') continue;
-        const translated = await client.translate(fragment.body, controller.signal);
+        const translated = await serial(() => client.translate(fragment.body, controller.signal));
         if (disposed || controller.signal.aborted) return;
         entry.results.set(fragment.body, translated);
+        entry.failures = 0;
         entry.rendered = assemble(entry);
         notify();
       }
     } catch (error) {
-      // Keep the source text on screen; the next paint can try again.
-      if (!disposed && !controller.signal.aborted) onError(error);
+      // Keep the source text on screen and try again shortly: the first request
+      // of a session can land while the Host half is still warming up.
+      if (!disposed && !controller.signal.aborted) {
+        onError(error);
+        entry.failures += 1;
+        if (entry.failures <= MAX_RETRIES) {
+          const delay = RETRY_MS * entry.failures;
+          setTimeout(() => { if (!disposed) schedule(entry); }, delay);
+        }
+      }
     } finally {
       entry.pending = false;
       entry.controller = undefined;
@@ -222,7 +249,7 @@ export function createReasoningTransformer(
   const ensure = (blockKey: string): Entry => {
     const existing = entries.get(blockKey);
     if (existing) return existing;
-    const entry: Entry = { source: '', streaming: false, fragments: [], tail: '', results: new Map(), pending: false, scheduled: false, dirty: false };
+    const entry: Entry = { source: '', streaming: false, fragments: [], tail: '', results: new Map(), pending: false, scheduled: false, dirty: false, failures: 0 };
     entries.set(blockKey, entry);
     if (entries.size > MAX_BLOCKS) {
       const oldest = entries.keys().next().value;
@@ -236,7 +263,7 @@ export function createReasoningTransformer(
 
   const transformer: DisplayTextTransformer = {
     read(request) {
-      if (disposed || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
+      if (disposed || showingOriginal || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
       const entry = ensure(request.blockKey);
       if (entry.source !== request.text || entry.streaming !== request.streaming) {
         entry.source = request.text;
@@ -266,6 +293,15 @@ export function createReasoningTransformer(
 
   return {
     transformer,
+    /** Switch every reasoning card between the translation and its source. */
+    setShowOriginal(value: boolean) {
+      if (showingOriginal === value) return;
+      showingOriginal = value;
+      // The reading view re-reads on notify, so this swaps the painted text
+      // without touching the session or re-requesting anything.
+      notify();
+    },
+    getShowOriginal: () => showingOriginal,
     dispose() {
       disposed = true;
       for (const entry of entries.values()) entry.controller?.abort();

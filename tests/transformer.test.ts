@@ -153,3 +153,20 @@ test('dispose stops further notifications and requests', async () => {
   assert.equal(state.calls.length, before);
   assert.ok(notified > 0);
 });
+
+test('show-original hides the translation without re-requesting it', async () => {
+  const state = recorder();
+  const { transformer, setShowOriginal } = createReasoningTransformer(state.client);
+  transformer.read(request('one\n\ntwo'));
+  await settle();
+  transformer.read(request('one\n\ntwo'));
+  await settle();
+  assert.equal(transformer.read(request('one\n\ntwo'))?.text, 'ONE\n\nTWO');
+
+  const before = state.calls.length;
+  setShowOriginal(true);
+  assert.equal(transformer.read(request('one\n\ntwo')), undefined, 'source is painted instead');
+  setShowOriginal(false);
+  assert.equal(transformer.read(request('one\n\ntwo'))?.text, 'ONE\n\nTWO', 'cached translation returns');
+  assert.equal(state.calls.length, before, 'toggling never re-sends a fragment');
+});

@@ -4,6 +4,7 @@ import {
   type DisplayTextTransformer,
   type TranslationClient,
 } from './transformer.js';
+import { installOriginalToggle } from './toggle.js';
 
 /** Reading view seam, documented in dsh-better-display's `docs/extension-points.md`. */
 const SEAM_SERVICE = 'dsh-better-display.text-transform';
@@ -71,15 +72,17 @@ export const inject = [SEAM_SERVICE];
 export function apply(ctx: Context): () => void {
   const seam = lookup<TextTransformSeam>(ctx, SEAM_SERVICE);
   if (!seam) return () => {};
-  const { transformer, dispose } = createReasoningTransformer(
+  const { transformer, dispose, getShowOriginal, setShowOriginal } = createReasoningTransformer(
     createHttpTranslationClient(),
     error => {
       console.warn('[cot-translation-reader] reasoning translation failed; keeping the source text', error);
     },
   );
+  const removeToggle = installOriginalToggle({ getShowOriginal, setShowOriginal });
   const unregister = seam.register('reasoning', transformer);
   return () => {
     unregister();
+    removeToggle();
     dispose();
   };
 }
