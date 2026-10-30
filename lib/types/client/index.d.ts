@@ -8,7 +8,7 @@ import { type TranslationClient } from './transformer.js';
  *
  * @returns client used by the transformer.
  */
-export declare function createHttpTranslationClient(): TranslationClient;
+export declare function createHttpTranslationClient(getLocale?: () => string): TranslationClient;
 export declare const name = "cot-translation-reader";
 /**
  * The reading view only paints translated reasoning when it offers the seam,

@@ -130,6 +130,15 @@ function clientConfig(id, entry) {
   }
 }
 
+// Rolldown checks both import specifiers and resolved IDs. In particular, a
+// Windows drive path does not begin with '.' or '/', but is still local.
+function isLocalModule(specifier) {
+  return specifier.startsWith('.') || specifier.startsWith('\0') ||
+    specifier.startsWith('file:') || specifier.startsWith('data:') ||
+    isAbsolute(specifier) || /^[A-Za-z]:[\\/]/.test(specifier) ||
+    specifier.startsWith('\\\\');
+}
+
 export function externalClientBundle(id, entries, { clientEntry } = {}) {
   const configs = []
   if (entries.length > 0) configs.push({
@@ -142,8 +151,8 @@ export function externalClientBundle(id, entries, { clientEntry } = {}) {
     clean: false,
     dts: false,
     deps: {
-      neverBundle: (specifier) => !/^[./]/.test(specifier),
-      alwaysBundle: (specifier) => /^[./]/.test(specifier),
+      neverBundle: (specifier) => !isLocalModule(specifier),
+      alwaysBundle: isLocalModule,
     },
     outputOptions: { entryFileNames: '[name].js' },
   })

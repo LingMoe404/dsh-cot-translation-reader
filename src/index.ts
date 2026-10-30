@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Context } from '@deepseek-ai/cordis';
+import { concreteLanguageTag } from './language.js';
 
 /**
  * Host half. The official COT bundle provides `cotTranslation` on the Host
@@ -54,8 +55,13 @@ const ROUTE_TRANSLATE = '/cot-translation-reader/translate';
 const ROUTE_STATUS = '/cot-translation-reader/status';
 const MAX_BODY_BYTES = 64 * 1024;
 
-/** Call counters, so a restart can be checked from outside the browser. */
-const calls = { limits: 0, translate: 0, lastError: '' as string };
+/** Diagnostics deliberately exclude reasoning text and request headers. */
+interface RequestMetadata {
+  textChars: number;
+  targetLanguage: string;
+  provider?: string;
+}
+
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.setHeader('Content-Type', 'application/json');
@@ -76,20 +82,36 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/**
- * Resolve `auto` to a concrete tag.
- *
- * The official browser half resolves `auto` from the UI locale before it calls
- * the Host; this route has no UI locale, so it uses the request's
- * `Accept-Language`. Providers reject `to=auto` outright (Bing answers 400),
- * so leaving it unresolved would fail every request.
- */
-function targetLanguageOf(req: IncomingMessage, requested: string): string {
-  if (requested !== 'auto') return requested;
+/** Resolve preferences, browser locale, then weighted concrete header tags. */
+function targetLanguageOf(req: IncomingMessage, requested: string, locale: unknown): string {
+  const explicit = concreteLanguageTag(requested);
+  if (explicit) return explicit;
+  const browser = concreteLanguageTag(locale);
+  if (browser) return browser;
   const header = req.headers['accept-language'];
-  const raw = Array.isArray(header) ? header[0] : header;
-  const first = raw?.split(',')[0]?.split(';')[0]?.trim();
-  return first && first.length > 0 ? first : 'en';
+  const raw = Array.isArray(header) ? header.join(',') : header;
+  // Bound parsing work as well as individual tags; never forward opaque input.
+  if (!raw || raw.length > 8192) return 'en';
+  let best: string | undefined;
+  let bestQuality = 0;
+  for (const entry of raw.split(',')) {
+    const [range, ...parameters] = entry.split(';');
+    const tag = concreteLanguageTag(range);
+    if (!tag) continue;
+    let quality = 1;
+    if (parameters.length > 0) {
+      if (parameters.length !== 1) continue;
+      // Accept common fractional q=.9 as well as standard q=0.9 notation.
+      const match = /^q\s*=\s*(0(?:\.\d{0,3})?|1(?:\.0{0,3})?|\.\d{1,3})$/i.exec(parameters[0]!.trim());
+      if (!match) continue;
+      quality = Number(match[1]);
+    }
+    if (quality > bestQuality) {
+      best = tag;
+      bestQuality = quality;
+    }
+  }
+  return best ?? 'en';
 }
 
 /**
@@ -101,6 +123,12 @@ function targetLanguageOf(req: IncomingMessage, requested: string): string {
 export function apply(ctx: Context): () => void {
   const server = ctx.webServer;
   if (!server) return () => {};
+  const calls = {
+    limits: 0, translate: 0, attempts: 0, failed: 0, pending: 0,
+    lastError: '',
+    lastRequest: undefined as RequestMetadata | undefined,
+    lastOutcome: 'idle' as 'idle' | 'success' | 'failure',
+  };
   const lookup = <T>(name: string): T | undefined =>
     (ctx as unknown as { get?: (key: string) => unknown }).get?.call(ctx, name) as T | undefined;
   const service = (): CotTranslation | undefined => lookup<CotTranslation>('cotTranslation');
@@ -165,10 +193,12 @@ export function apply(ctx: Context): () => void {
         return;
       }
       let text = '';
+      let locale: unknown;
       try {
         const parsed: unknown = JSON.parse(await readBody(req));
         if (parsed && typeof parsed === 'object' && typeof (parsed as { text?: unknown }).text === 'string') {
           text = (parsed as { text: string }).text;
+          locale = (parsed as { locale?: unknown }).locale;
         }
       } catch {
         sendJson(res, 400, { error: 'bad-request' });
@@ -178,6 +208,8 @@ export function apply(ctx: Context): () => void {
         sendJson(res, 400, { error: 'empty-text' });
         return;
       }
+      calls.attempts += 1;
+      calls.pending += 1;
       try {
         // Preferences live in the official bundle's settings, so read them per
         // request instead of caching a copy that can drift.
@@ -188,19 +220,26 @@ export function apply(ctx: Context): () => void {
           requested = snapshot.preferences.targetLanguage;
           provider = snapshot.preferences.provider;
         }
-        const targetLanguage = targetLanguageOf(req, requested);
+        const targetLanguage = targetLanguageOf(req, requested, locale);
+        calls.lastRequest = { textChars: text.length, targetLanguage, provider };
         // Prefer the translator: cotTranslation rewrites every failure into one
         // opaque message, which leaves nothing to diagnose.
         const translated = direct
           ? await direct.translate(direct.resolve({ text, targetLanguage, provider }), new AbortController().signal)
           : await current!.translate({ text, targetLanguage, provider }, new AbortController().signal);
         calls.translate += 1;
+        calls.lastError = '';
+        calls.lastOutcome = 'success';
         sendJson(res, 200, { text: translated });
       } catch (error) {
         const code = (error as { code?: unknown }).code;
         const message = error instanceof Error ? error.message : String(error);
+        calls.failed += 1;
+        calls.lastOutcome = 'failure';
         calls.lastError = typeof code === 'string' ? `${code}: ${message}` : message;
         sendJson(res, 502, { error: 'translate-failed' });
+      } finally {
+        calls.pending -= 1;
       }
     },
   });

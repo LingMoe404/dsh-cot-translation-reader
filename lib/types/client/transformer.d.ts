@@ -66,9 +66,9 @@ export declare function reasoningFragments(text: string, running: boolean, maxTe
 /** Build the transformer the reading view registers, plus a disposer. */
 export declare function createReasoningTransformer(client: TranslationClient, onError?: (error: unknown) => void): {
     transformer: DisplayTextTransformer;
-    /** Switch every reasoning card between the translation and its source. */
-    setShowOriginal(value: boolean): void;
-    getShowOriginal(): boolean;
+    /** Switch one admitted reasoning card between its translation and source. */
+    setShowOriginal(blockKey: string, value: boolean): void;
+    getShowOriginal(blockKey: string): boolean;
     dispose(): void;
 };
 //# sourceMappingURL=transformer.d.ts.map

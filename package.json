@@ -1,6 +1,6 @@
 {
   "name": "dsh-cot-translation-reader",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Show the official COT machine translation inside dsh-better-display's reading view. · 在阅读视图里显示官方「思考过程机器翻译」的译文。",
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,9 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsdown",
+    "build": "tsc -p tsconfig.json && tsdown && npm run check:runtime && npm run check:stability",
+    "check:runtime": "node tools/check-runtime.mjs",
+    "check:stability": "node tools/check-client-stability.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -34,7 +36,8 @@
     "lib",
     "src",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0"

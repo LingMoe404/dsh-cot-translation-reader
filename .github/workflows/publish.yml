@@ -21,6 +21,11 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Verify release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node -e "const p=require('./package.json'); if(process.env.RELEASE_TAG !== 'v'+p.version) throw new Error('Release tag does not match package version')"
+
       - name: Install
         run: npm ci
 
@@ -29,6 +34,9 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Build and verify runtime artifacts
+        run: npm run build
 
       # npm detects the OIDC environment and exchanges it for a short-lived
       # publish credential; --provenance records the build attestation.

@@ -5,6 +5,7 @@ import {
   type TranslationClient,
 } from './transformer.js';
 import { installOriginalToggle } from './toggle.js';
+import { browserTranslationLocale } from './locale.js';
 
 /** Reading view seam, documented in dsh-better-display's `docs/extension-points.md`. */
 const SEAM_SERVICE = 'dsh-better-display.text-transform';
@@ -31,7 +32,9 @@ function lookup<T>(ctx: Context, service: string): T | undefined {
  *
  * @returns client used by the transformer.
  */
-export function createHttpTranslationClient(): TranslationClient {
+export function createHttpTranslationClient(
+  getLocale: () => string = () => browserTranslationLocale(),
+): TranslationClient {
   return {
     async limits(signal) {
       const response = await fetch(ROUTE_LIMITS, { signal, headers: { accept: 'application/json' } });
@@ -45,7 +48,7 @@ export function createHttpTranslationClient(): TranslationClient {
         method: 'POST',
         signal,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, locale: getLocale() }),
       });
       if (!response.ok) throw new Error(`translate ${response.status}`);
       const body = await response.json() as { text?: unknown };
@@ -73,7 +76,10 @@ export function apply(ctx: Context): () => void {
   const seam = lookup<TextTransformSeam>(ctx, SEAM_SERVICE);
   if (!seam) return () => {};
   const { transformer, dispose, getShowOriginal, setShowOriginal } = createReasoningTransformer(
-    createHttpTranslationClient(),
+    createHttpTranslationClient(() => {
+      const locale = lookup<{ getSnapshot(): { active: string } }>(ctx, 'locale');
+      return browserTranslationLocale(locale?.getSnapshot().active);
+    }),
     error => {
       console.warn('[cot-translation-reader] reasoning translation failed; keeping the source text', error);
     },

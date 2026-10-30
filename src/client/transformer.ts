@@ -55,10 +55,12 @@ export interface ReasoningFragment {
 }
 
 /** Blank-line paragraph breaks, retaining their exact characters. */
-const PARAGRAPH_BREAK = /\n[ \t]*\n[ \t]*/g;
+const PARAGRAPH_BREAK = /\r?\n[ \t]*\r?\n[ \t]*/g;
 
-/** Mounted blocks retained before the oldest is dropped. */
-const MAX_BLOCKS = 40;
+/** Hard admission bound; a repaint must never evict another recently read card. */
+const MAX_BLOCKS = 512;
+/** Reclaim only entries that have not participated in reads for five minutes. */
+const BLOCK_IDLE_MS = 5 * 60 * 1000;
 
 /** Cooldown before retrying limits after a failed read (ms). */
 const RETRY_MS = 8000;
@@ -128,8 +130,10 @@ export function reasoningFragments(text: string, running: boolean, maxTextChars:
 }
 
 interface Entry {
+  lastReadAt: number;
   source: string;
   streaming: boolean;
+  showOriginal: boolean;
   fragments: ReasoningFragment[];
   tail: string;
   readonly results: Map<string, string>;
@@ -138,6 +142,8 @@ interface Entry {
   scheduled: boolean;
   dirty: boolean;
   failures: number;
+  active: boolean;
+  retryTimer?: ReturnType<typeof setTimeout>;
   controller?: AbortController;
 }
 
@@ -147,15 +153,14 @@ export function createReasoningTransformer(
   onError: (error: unknown) => void = () => {},
 ): {
   transformer: DisplayTextTransformer;
-  /** Switch every reasoning card between the translation and its source. */
-  setShowOriginal(value: boolean): void;
-  getShowOriginal(): boolean;
+  /** Switch one admitted reasoning card between its translation and source. */
+  setShowOriginal(blockKey: string, value: boolean): void;
+  getShowOriginal(blockKey: string): boolean;
   dispose(): void;
 } {
   const entries = new Map<string, Entry>();
   const listeners = new Set<() => void>();
   let disposed = false;
-  let showingOriginal = false;
   let retryAt = 0;
   let target: TranslationTarget | undefined;
   let preparing: Promise<void> | undefined;
@@ -202,17 +207,23 @@ export function createReasoningTransformer(
   };
 
   const run = async (entry: Entry): Promise<void> => {
-    if (disposed || entry.pending) return;
+    if (disposed || !entry.active || entry.pending || entry.retryTimer !== undefined) return;
     const current = target;
     if (!current) return;
     entry.pending = true;
     const controller = new AbortController();
     entry.controller = controller;
+    const fragments = entry.fragments;
     try {
-      for (let index = 0; index < entry.fragments.length; index += 1) {
-        const fragment = entry.fragments[index];
+      for (const fragment of fragments) {
+        // A repaint may replace the fragment list while a request is in flight.
+        // Finish that request, then restart against the latest source below.
+        if (entry.fragments !== fragments) break;
         if (entry.results.has(fragment.body) || fragment.body.trim() === '') continue;
-        const translated = await serial(() => client.translate(fragment.body, controller.signal));
+        const translated = await serial(() => {
+          controller.signal.throwIfAborted();
+          return client.translate(fragment.body, controller.signal);
+        });
         if (disposed || controller.signal.aborted) return;
         entry.results.set(fragment.body, translated);
         entry.failures = 0;
@@ -227,18 +238,21 @@ export function createReasoningTransformer(
         entry.failures += 1;
         if (entry.failures <= MAX_RETRIES) {
           const delay = RETRY_MS * entry.failures;
-          setTimeout(() => { if (!disposed) schedule(entry); }, delay);
+          entry.retryTimer = setTimeout(() => {
+            entry.retryTimer = undefined;
+            schedule(entry);
+          }, delay);
         }
       }
     } finally {
       entry.pending = false;
       entry.controller = undefined;
-      if (!disposed && entry.dirty) schedule(entry);
+      if (entry.dirty || entry.fragments !== fragments) schedule(entry);
     }
   };
 
   const schedule = (entry: Entry) => {
-    if (disposed || entry.pending || entry.scheduled) return;
+    if (disposed || !entry.active || entry.pending || entry.scheduled || entry.retryTimer !== undefined) return;
     entry.scheduled = true;
     queueMicrotask(() => {
       entry.scheduled = false;
@@ -246,25 +260,42 @@ export function createReasoningTransformer(
     });
   };
 
-  const ensure = (blockKey: string): Entry => {
+  const retire = (entry: Entry) => {
+    entry.active = false;
+    entry.controller?.abort();
+    if (entry.retryTimer !== undefined) clearTimeout(entry.retryTimer);
+    entry.retryTimer = undefined;
+  };
+
+  const ensure = (blockKey: string): Entry | undefined => {
+    const now = Date.now();
     const existing = entries.get(blockKey);
-    if (existing) return existing;
-    const entry: Entry = { source: '', streaming: false, fragments: [], tail: '', results: new Map(), pending: false, scheduled: false, dirty: false, failures: 0 };
-    entries.set(blockKey, entry);
-    if (entries.size > MAX_BLOCKS) {
-      const oldest = entries.keys().next().value;
-      if (oldest !== undefined && oldest !== blockKey) {
-        entries.get(oldest)?.controller?.abort();
-        entries.delete(oldest);
-      }
+    if (existing) {
+      existing.lastReadAt = now;
+      return existing;
     }
+    if (entries.size >= MAX_BLOCKS) {
+      // The seam broadcasts every update to all cards. Evicting a recently read
+      // card here would make the next sweep evict its replacement indefinitely.
+      // At capacity, reclaim only genuinely idle work; otherwise show source.
+      for (const [key, candidate] of entries) {
+        if (now - candidate.lastReadAt < BLOCK_IDLE_MS) continue;
+        retire(candidate);
+        entries.delete(key);
+        break;
+      }
+      if (entries.size >= MAX_BLOCKS) return undefined;
+    }
+    const entry: Entry = { lastReadAt: now, source: '', streaming: false, showOriginal: false, fragments: [], tail: '', results: new Map(), pending: false, scheduled: false, dirty: false, failures: 0, active: true };
+    entries.set(blockKey, entry);
     return entry;
   };
 
   const transformer: DisplayTextTransformer = {
     read(request) {
-      if (disposed || showingOriginal || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
+      if (disposed || request.kind !== 'reasoning' || request.source === 'tool') return undefined;
       const entry = ensure(request.blockKey);
+      if (!entry) return undefined;
       if (entry.source !== request.text || entry.streaming !== request.streaming) {
         entry.source = request.text;
         entry.streaming = request.streaming;
@@ -272,7 +303,9 @@ export function createReasoningTransformer(
       }
       prepare();
       const current = target;
-      if (!current) return entry.rendered === undefined ? undefined : { text: entry.rendered, final: !request.streaming };
+      if (!current) return entry.showOriginal
+        ? { text: request.text, final: !request.streaming }
+        : entry.rendered === undefined ? undefined : { text: entry.rendered, final: !request.streaming };
       if (entry.dirty) {
         entry.dirty = false;
         const next = reasoningFragments(entry.source, request.streaming, current.maxTextChars);
@@ -283,6 +316,9 @@ export function createReasoningTransformer(
         entry.rendered = entry.results.size > 0 ? assemble(entry) : undefined;
         schedule(entry);
       }
+      // Original is an explicit replacement: undefined would leave a previously
+      // painted translation visible. Always use this read's growing source.
+      if (entry.showOriginal) return { text: request.text, final: !request.streaming };
       return entry.rendered === undefined ? undefined : { text: entry.rendered, final: !request.streaming };
     },
     subscribe(listener) {
@@ -293,18 +329,18 @@ export function createReasoningTransformer(
 
   return {
     transformer,
-    /** Switch every reasoning card between the translation and its source. */
-    setShowOriginal(value: boolean) {
-      if (showingOriginal === value) return;
-      showingOriginal = value;
-      // The reading view re-reads on notify, so this swaps the painted text
-      // without touching the session or re-requesting anything.
+    setShowOriginal(blockKey: string, value: boolean) {
+      const entry = entries.get(blockKey);
+      if (!entry || entry.showOriginal === value) return;
+      entry.showOriginal = value;
+      // Broadcast repaint is safe: each read checks only its own entry's flag.
+      // Preserve translated fragments for an immediate, request-free switch back.
       notify();
     },
-    getShowOriginal: () => showingOriginal,
+    getShowOriginal: (blockKey: string) => entries.get(blockKey)?.showOriginal ?? false,
     dispose() {
       disposed = true;
-      for (const entry of entries.values()) entry.controller?.abort();
+      for (const entry of entries.values()) retire(entry);
       entries.clear();
       listeners.clear();
     },
