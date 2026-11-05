@@ -154,17 +154,15 @@ git push origin v0.1.8
 
 ## 作者
 
+<div align="center">
+
 **泠萌404** · 二次元 / PC 硬件与 NAS
 
-[![GitHub](https://img.shields.io/badge/GitHub-LingMoe404-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/LingMoe404)
-[![Bilibili](https://img.shields.io/badge/Bilibili-136850-00A1D6?style=flat-square&logo=bilibili&logoColor=white)](https://space.bilibili.com/136850)
-[![Douyin](https://img.shields.io/badge/Douyin-LingMoe404-000000?style=flat-square&logo=tiktok&logoColor=white)](https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q)
+<a href="https://github.com/LingMoe404"><img src="https://img.shields.io/badge/GitHub-LingMoe404-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub：LingMoe404" /></a>
+<a href="https://space.bilibili.com/136850"><img src="https://img.shields.io/badge/Bilibili-136850-00A1D6?style=for-the-badge&logo=bilibili&logoColor=white" alt="B站：136850" /></a>
+<a href="https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q"><img src="https://img.shields.io/badge/Douyin-LingMoe404-000000?style=for-the-badge&logo=tiktok&logoColor=white" alt="抖音：泠萌404" /></a>
 
-| 平台 | 主页 |
-| :--- | --- |
-| GitHub | [github.com/LingMoe404](https://github.com/LingMoe404) |
-| B站 | [space.bilibili.com/136850](https://space.bilibili.com/136850) |
-| 抖音 | [douyin.com/user/MS4wLjABAAAA…](https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q) |
+</div>
 
 ## 许可
 
