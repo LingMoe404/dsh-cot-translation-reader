@@ -1,5 +1,7 @@
 # dsh-cot-translation-reader
 
+<img src="assets/icon-512.png" width="120" alt="插件图标" align="right">
+
 在 [**dsh-better-display**](https://github.com/aa2246740/dsh-better-display) 的「阅读」页签里显示 DeepSeek Harness 官方「思考过程机器翻译」的译文。
 
 官方 COT 翻译组合包把译文注册在 `conversation.chat.reasoning.body` 插槽上，而阅读页用自己的组件渲染思考，所以那个插槽在阅读页里永远不会渲染——装了翻译包看起来却像没翻译。本插件补上这段适配：注册到 reading view 的 `dsh-better-display.text-transform` 缝，把译文交给阅读页绘制。
@@ -67,6 +69,14 @@ npm run check:stability # 单独检查当前浏览器产物，无真实 DOM/网�
 
 - [dsh-better-display](https://github.com/aa2246740/dsh-better-display)：提供 `dsh-better-display.text-transform` 缝的阅读页插件
 - [@deepseek-ai/dsh-experimental-cot-translation-bundle](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle)：官方思考翻译组合包，翻译服务与目标语言在它的插件面板里设置
+
+## 作者
+
+**泠萌404**
+
+- GitHub：<https://github.com/LingMoe404>
+- B站：<https://space.bilibili.com/136850>
+- 抖音：<https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q>
 
 ## 许可
 
