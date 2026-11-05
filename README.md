@@ -1,83 +1,171 @@
+<div align="center">
+
+<img src="assets/icon-512.png" width="112" alt="dsh-cot-translation-reader 图标" />
+
 # dsh-cot-translation-reader
 
-<img src="assets/icon-512.png" width="120" alt="插件图标" align="right">
+**让 DeepSeek Harness 的阅读页显示思考过程的机器翻译。**
 
-在 [**dsh-better-display**](https://github.com/aa2246740/dsh-better-display) 的「阅读」页签里显示 DeepSeek Harness 官方「思考过程机器翻译」的译文。
+在 [dsh-better-display](https://github.com/aa2246740/dsh-better-display) 的「阅读」页签里，自动显示官方 COT 机器翻译的译文，并可按卡片在原文与译文之间切换。
 
-官方 COT 翻译组合包把译文注册在 `conversation.chat.reasoning.body` 插槽上，而阅读页用自己的组件渲染思考，所以那个插槽在阅读页里永远不会渲染——装了翻译包看起来却像没翻译。本插件补上这段适配：注册到 reading view 的 `dsh-better-display.text-transform` 缝，把译文交给阅读页绘制。
+[![npm version](https://img.shields.io/npm/v/dsh-cot-translation-reader?style=flat-square&color=CB3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/dsh-cot-translation-reader)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-cot-translation-reader?style=flat-square&color=CB3837&logo=npm&logoColor=white)](https://www.npmjs.com/package/dsh-cot-translation-reader)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![DSH plugin](https://img.shields.io/badge/DeepSeek%20Harness-plugin-6E56CF?style=flat-square)](https://github.com/LingMoe404/dsh-cot-translation-reader)
+[![better-display](https://img.shields.io/badge/better--display-%E2%89%A50.3.9-FF4D8D?style=flat-square)](https://github.com/aa2246740/dsh-better-display)
+[![publish](https://github.com/LingMoe404/dsh-cot-translation-reader/actions/workflows/publish.yml/badge.svg)](https://github.com/LingMoe404/dsh-cot-translation-reader/actions/workflows/publish.yml)
 
-## 依赖
+</div>
 
-| 组件 | 作用 |
-| --- | --- |
-| [`dsh-better-display`](https://github.com/aa2246740/dsh-better-display) ≥ **0.3.9** | 提供 `dsh-better-display.text-transform` 缝 |
-| [`@deepseek-ai/dsh-experimental-cot-translation-bundle`](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle) | 提供 `cotTranslation` 服务与翻译设置（翻译服务、目标语言） |
+---
 
-两个都缺任意一个时，本插件**安静地不生效**，不报错、不改界面。
+## 为什么需要它
+
+官方 COT 翻译组合包把译文注册在 `conversation.chat.reasoning.body` 插槽上，而阅读页用自己的组件渲染思考内容——那个插槽在阅读页里永远不会渲染。于是会出现一种错觉：明明装了翻译包，阅读页却还是原文。
+
+本插件补上这段适配：注册到阅读页的 `dsh-better-display.text-transform` 缝，把宿主翻译服务的译文交给阅读页绘制。
+
+## 特性
+
+| | 能力 | 说明 |
+| :--: | --- | --- |
+| 🌏 | **自动翻译** | 思考内容出现即请求译文，无需点击；目标语言优先跟随官方设置，`auto` 时读取界面语言，不会把 `Accept-Language: *` 当成目标语言 |
+| 🔀 | **单卡片切换** | 每张思考卡片可独立切换「查看原文 / 查看译文」，只影响所点击的卡片；相同文本也按块标识区分 |
+| 👁 | **只改显示** | 会话记录、折叠、复制回答拿到的仍是原文，插件不写回会话 |
+| ✍️ | **流式友好** | 生成中的最后一段保持原文，只翻译已经完成的段落 |
+| ♻️ | **失败降级** | 翻译失败保留原文，自动重试最多 3 次，不打断阅读 |
+| 🚦 | **串行与限流** | 逐段串行请求，单次长度遵守宿主返回的 `maxTextChars`，已缓存片段不重复请求 |
+| 🛡 | **缓存有界** | 最多保留 512 条卡片缓存；满额只回收闲置五分钟以上的条目，必要时保留原文而不是制造请求风暴 |
+| 🧹 | **卸载干净** | 关闭或卸载时中止进行中的请求并清理重试定时器 |
 
 ## 安装
 
+### 前置条件
+
+| 组件 | 版本 | 作用 |
+| --- | --- | --- |
+| [dsh-better-display](https://github.com/aa2246740/dsh-better-display) | ≥ **0.3.9**（单卡片按钮需 ≥ **0.3.12**） | 提供 `dsh-better-display.text-transform` 缝与思考块标识 |
+| [@deepseek-ai/dsh-experimental-cot-translation-bundle](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle) | 最新 | 提供宿主翻译服务与翻译设置（服务商、目标语言） |
+
+两者缺任意一个时，本插件**安静地不生效**：不报错，也不改界面。
+
+### 通过插件市场
+
+在 DSH 插件面板里搜索 `dsh-cot-translation-reader` 安装，然后完全重启 DSH。
+
+### 通过 npm
+
 ```sh
-# npm（推荐）
 pnpm add dsh-cot-translation-reader
-
-# 从 GitHub 安装（跟踪 main，不用等发布）
-pnpm add github:LingMoe404/dsh-cot-translation-reader
-
-# 本地目录
-pnpm add file:../dsh-cot-translation-reader
 ```
 
-装完重启 DSH（Desktop 从托盘完全退出；Web Host 重开一次），然后把 `dsh-cot-translation-reader` 加进 profile `package.json` 的 `dsh.profile.bundles`（插件管理器安装时会自动写）。
+### 从 GitHub 安装（跟踪 main，不必等发版）
 
-## 行为
+```sh
+pnpm add github:LingMoe404/dsh-cot-translation-reader
+```
 
-- **自动翻译**：自动请求译文，不需要点击。官方手动指定的目标语言优先；设为 `auto` 时读取当前界面语言，再回退到文档或浏览器语言，不会把请求头里的 `*` 当作目标语言。
-- 支持稳定块标识的阅读页会在每张思考卡片右上角显示 **查看原文 / 查看译文** 按钮；只切换所点击的卡片，不影响其他卡片。相同文本也按独立标识区分，缓存仍在时不会重新请求。
-- **单卡片开关兼容性**：需要 better-display ≥ **0.3.12** 在思考文本节点提供 `data-reader-reasoning-block-key`（上游配套补丁 [PR #82](https://github.com/aa2246740/dsh-better-display/pull/82) 已合并）。0.3.9 等旧版本仍可自动翻译，但不会显示单卡片按钮，也不会通过文本或顺序猜测对应卡片。
-- **只改显示**：会话记录、折叠、复制回答拿到的都是原文。
-- 流式生成中的最后一段保持原文，只翻译已经完成的段落。
-- 翻译失败时保留原文、自动重试最多 3 次，并在控制台 `warn`，不会打断阅读。
-- 逐段请求（串行，避免触发提供商限流），单次长度遵守 Host 返回的 `maxTextChars`；保留在缓存中的片段不会重复请求。
-- **缓存安全上限**：最多保留 512 条卡片缓存。满额时只回收至少五分钟未读取的条目，不因全局重绘挤掉最近使用的译文；没有可回收条目时，新卡片继续显示原文，不发送额外翻译请求。闲置缓存被回收后，再次阅读可能重新请求。
-- 按钮只在启动时扫描一次文档，之后按相关 DOM 变化增量维护，不在每次流式更新时重扫整页。
-- 关闭插件或卸载时中止进行中的请求并清理重试定时器。
+### 安装后
+
+1. 完全退出 DSH Desktop（托盘退出），或重启一次 Web Host。
+2. 确认 profile 的 `package.json` 中已登记 bundle（插件管理器会自动写入）：
+
+```jsonc
+{
+  "dsh": {
+    "profile": {
+      "bundles": ["dsh-cot-translation-reader"]
+    }
+  }
+}
+```
+
+## 使用
+
+- **自动翻译**：打开「阅读」页签即可，思考卡片会逐步从原文切换为译文。
+- **查看原文 / 查看译文**：阅读页每张思考卡片右上角有按钮，只切换当前卡片。需要 better-display **≥ 0.3.12**。
+- **目标语言**：在官方翻译组合包的设置里选择；设为 `auto` 时跟随界面语言。
+
+### 兼容矩阵
+
+| better-display | 自动翻译 | 单卡片按钮 |
+| --- | :--: | :--: |
+| `0.3.9` – `0.3.11` | ✅ | ❌（缺少 `data-reader-reasoning-block-key`） |
+| `≥ 0.3.12` | ✅ | ✅ |
+
+没有块标识时插件**不会**按文本或卡片顺序猜测归属，只显示自动翻译。
+
+## 工作原理
+
+```text
+┌──────────────────────────── DeepSeek Harness Host ────────────────────────────┐
+│  translator / cotTranslation（官方 COT 组合包提供，设置也在这里）              │
+└───────────────────────────────▲──────────────────────────────────────────────┘
+                                │  POST /cot-translation-reader/translate
+┌───────────────────────────────┴──────────────────────────────────────────────┐
+│  浏览器端：注册 dsh-better-display.text-transform 的 reasoning 转换器          │
+│  阅读页 read() → 译文；原文模式 → 当前源文本；通知 → 卡片重绘                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+翻译只发生在展示层，不触碰会话记录、转录与折叠输入。
+
+## 开发与验证
+
+```sh
+npm ci
+npm run typecheck        # 类型检查
+npm test                 # 78 项单元/集成测试（1 项真实网络测试默认跳过）
+npm run build            # 构建 + 产物加载检查 + 40–600 张卡片稳定性检查
+```
+
+| 命令 | 检查内容 |
+| --- | --- |
+| `npm run check:runtime` | 导入构建后的 Host 入口、在隔离 VM 执行浏览器工厂，不挂载插件 |
+| `npm run check:stability` | 用合成数据跑 40 / 41 / 45 / 100 / 512 / 600 张卡片，验证不循环重译 |
+| `npm test` | 语言协商、缓存、按钮隔离、构建产物等回归 |
+
+`tools/client-build.js` 是从 DeepSeek Harness 公共构建产物复刻的客户端打包配方（见文件头注释），因此构建不需要完整 Harness 源码树。
 
 ## 发布
 
-推一个 `v*` tag 就会发布：`.github/workflows/publish.yml` 通过 npm **Trusted Publishing（OIDC）**换取短期凭据，仓库和本机都不保存任何 npm token，也不需要动态码。
+推送 `v*` tag 即发布。`.github/workflows/publish.yml` 使用 npm **Trusted Publishing（OIDC）** 换取短期凭据，仓库与本机都不保存 npm token，也不需要动态码；发布前会校验 tag 与版本一致，并重新构建、检查产物。
 
 ```sh
 git tag -a v0.1.8 -m "v0.1.8"
 git push origin v0.1.8
 ```
 
-## 开发
+## 常见问题
 
-```sh
-npm ci
-npm run typecheck
-npm test
-npm run build     # 构建后自动检查 Host 导入、浏览器工厂及 40–600 张卡片的离线稳定性
-npm run check:runtime   # 单独检查当前构建产物是否可加载，不挂载插件
-npm run check:stability # 单独检查当前浏览器产物，无真实 DOM/网络/桌面访问
-```
+**阅读页没有译文？**
+确认官方 COT 翻译组合包已启用、目标语言设置正确，并且 better-display 至少为 0.3.9。宿主未提供翻译服务时，插件不会显示任何内容，也不会报错。
 
-`tools/client-build.js` 是从 DeepSeek Harness 公共构建产物里复刻的客户端打包配方（见文件头注释），因此构建不需要完整的 Harness 源码树。
+**有译文但没有「查看原文」按钮？**
+按钮需要 better-display ≥ 0.3.12 提供的思考块标识。升级阅读页插件并完全重启 DSH。
 
-## 相关
+**插件市场更新报 `duplicate exact route`？**
+升级到本插件 **0.1.8** 及以上：重复激活现在是安全无操作，不再因重复路由导致启动失败。
 
-- [dsh-better-display](https://github.com/aa2246740/dsh-better-display)：提供 `dsh-better-display.text-transform` 缝的阅读页插件
-- [@deepseek-ai/dsh-experimental-cot-translation-bundle](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle)：官方思考翻译组合包，翻译服务与目标语言在它的插件面板里设置
+## 相关项目
+
+- [dsh-better-display](https://github.com/aa2246740/dsh-better-display)：提供阅读页与 `text-transform` 扩展点
+- [@deepseek-ai/dsh-experimental-cot-translation-bundle](https://www.npmjs.com/package/@deepseek-ai/dsh-experimental-cot-translation-bundle)：官方思考翻译组合包
 
 ## 作者
 
-**泠萌404**
+**泠萌404** · 二次元 / 魔法少女 / PC 硬件与 NAS
 
-- GitHub：<https://github.com/LingMoe404>
-- B站：<https://space.bilibili.com/136850>
-- 抖音：<https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q>
+[![GitHub](https://img.shields.io/badge/GitHub-LingMoe404-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/LingMoe404)
+[![Bilibili](https://img.shields.io/badge/Bilibili-136850-00A1D6?style=flat-square&logo=bilibili&logoColor=white)](https://space.bilibili.com/136850)
+[![Douyin](https://img.shields.io/badge/Douyin-LingMoe404-000000?style=flat-square&logo=tiktok&logoColor=white)](https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q)
+
+| 平台 | 主页 |
+| :--- | --- |
+| GitHub | [github.com/LingMoe404](https://github.com/LingMoe404) |
+| B站 | [space.bilibili.com/136850](https://space.bilibili.com/136850) |
+| 抖音 | [douyin.com/user/MS4wLjABAAAA…](https://www.douyin.com/user/MS4wLjABAAAA8fYebaVF2xlczanlTvT-bVoRxLqNjp5Tr01pV8wM88Q) |
 
 ## 许可
 
-MIT
+[MIT](LICENSE) © 泠萌404
