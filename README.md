@@ -154,7 +154,7 @@ git push origin v0.1.8
 
 ## 作者
 
-**泠萌404** · 二次元 / 魔法少女 / PC 硬件与 NAS
+**泠萌404** · 二次元 / PC 硬件与 NAS
 
 [![GitHub](https://img.shields.io/badge/GitHub-LingMoe404-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/LingMoe404)
 [![Bilibili](https://img.shields.io/badge/Bilibili-136850-00A1D6?style=flat-square&logo=bilibili&logoColor=white)](https://space.bilibili.com/136850)
