@@ -149,3 +149,29 @@ test('HTTP bridge resolves browser locale and clears historical errors after rec
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 });
+
+test('a duplicate activation is a no-op instead of a duplicate-route failure', () => {
+  const routes = new Map<string, unknown>();
+  // Reproduce the real web server contract: registering the same exact path throws.
+  const ctx = {
+    webServer: {
+      register(route: { path: string }) {
+        if (routes.has(route.path)) throw new Error(`duplicate exact route "${route.path}"`);
+        routes.set(route.path, route);
+        return () => { routes.delete(route.path); };
+      },
+    },
+    get() { return undefined; },
+  };
+  const first = apply(ctx as unknown as Context);
+  const second = apply(ctx as unknown as Context);
+  assert.equal(routes.size, 3, 'the second activation must not register again');
+  second();
+  assert.equal(routes.size, 3, 'the duplicate disposer must not remove live routes');
+  first();
+  assert.equal(routes.size, 0);
+  const again = apply(ctx as unknown as Context);
+  assert.equal(routes.size, 3, 'a disposed mount can be activated again');
+  again();
+  assert.equal(routes.size, 0);
+});

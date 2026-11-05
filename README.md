@@ -32,7 +32,7 @@ pnpm add file:../dsh-cot-translation-reader
 
 - **自动翻译**：自动请求译文，不需要点击。官方手动指定的目标语言优先；设为 `auto` 时读取当前界面语言，再回退到文档或浏览器语言，不会把请求头里的 `*` 当作目标语言。
 - 支持稳定块标识的阅读页会在每张思考卡片右上角显示 **查看原文 / 查看译文** 按钮；只切换所点击的卡片，不影响其他卡片。相同文本也按独立标识区分，缓存仍在时不会重新请求。
-- **单卡片开关兼容性**：需要 better-display 在思考文本节点提供 `data-reader-reasoning-block-key`，配套补丁见 [better-display PR #82](https://github.com/aa2246740/dsh-better-display/pull/82)。该补丁尚未合并发布，npm 上的 better-display 0.3.9 不包含此标识：仍可自动翻译，但不会显示单卡片按钮，不通过文本或顺序猜测对应卡片。
+- **单卡片开关兼容性**：需要 better-display ≥ **0.3.12** 在思考文本节点提供 `data-reader-reasoning-block-key`（上游配套补丁 [PR #82](https://github.com/aa2246740/dsh-better-display/pull/82) 已合并）。0.3.9 等旧版本仍可自动翻译，但不会显示单卡片按钮，也不会通过文本或顺序猜测对应卡片。
 - **只改显示**：会话记录、折叠、复制回答拿到的都是原文。
 - 流式生成中的最后一段保持原文，只翻译已经完成的段落。
 - 翻译失败时保留原文、自动重试最多 3 次，并在控制台 `warn`，不会打断阅读。
@@ -46,8 +46,8 @@ pnpm add file:../dsh-cot-translation-reader
 推一个 `v*` tag 就会发布：`.github/workflows/publish.yml` 通过 npm **Trusted Publishing（OIDC）**换取短期凭据，仓库和本机都不保存任何 npm token，也不需要动态码。
 
 ```sh
-git tag -a v0.1.7 -m "v0.1.7"
-git push origin v0.1.7
+git tag -a v0.1.8 -m "v0.1.8"
+git push origin v0.1.8
 ```
 
 ## 开发

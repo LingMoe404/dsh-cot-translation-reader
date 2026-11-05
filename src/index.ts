@@ -114,8 +114,16 @@ function targetLanguageOf(req: IncomingMessage, requested: string, locale: unkno
   return best ?? 'en';
 }
 
+/** Servers already carrying this plugin's routes; a duplicate mount must not crash. */
+const mounted = new WeakSet<object>();
+
 /**
  * Register the translation routes.
+ *
+ * A profile can compose the same entry twice (for example a market update
+ * verification), and `webServer.register` rejects duplicate exact paths. The
+ * second activation is a no-op rather than a fatal startup error; it must not
+ * own the first activation's disposer either.
  *
  * @param ctx - Host plugin context.
  * @returns disposer removing both routes.
@@ -123,6 +131,8 @@ function targetLanguageOf(req: IncomingMessage, requested: string, locale: unkno
 export function apply(ctx: Context): () => void {
   const server = ctx.webServer;
   if (!server) return () => {};
+  if (mounted.has(server)) return () => {};
+  mounted.add(server);
   const calls = {
     limits: 0, translate: 0, attempts: 0, failed: 0, pending: 0,
     lastError: '',
@@ -258,6 +268,7 @@ export function apply(ctx: Context): () => void {
   });
 
   return () => {
+    mounted.delete(server);
     disposeLimits();
     disposeTranslate();
     disposeStatus();

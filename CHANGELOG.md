@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8 — 2026-11-05
+
+### Fixed
+
+- A second activation of the Host entry in the same process — for example a plugin-market update verification that composes the entry twice — is now a no-op instead of failing startup with `webserver: duplicate exact route "/cot-translation-reader/limits"`. Duplicate activation no longer registers extra routes, and its disposer cannot remove the live routes owned by the first activation.
+
+### Compatibility
+
+- Per-card **查看原文 / 查看译文** controls now work with the published `dsh-better-display` **0.3.12+**, which exposes `data-reader-reasoning-block-key` (upstream PR #82, merged 2026-11-03). Plain `0.3.9` still translates automatically but shows no per-card button.
+
 ## 0.1.7 — 2026-10-30
 
 ### Fixed

@@ -23,6 +23,11 @@ export declare const inject: string[];
 /**
  * Register the translation routes.
  *
+ * A profile can compose the same entry twice (for example a market update
+ * verification), and `webServer.register` rejects duplicate exact paths. The
+ * second activation is a no-op rather than a fatal startup error; it must not
+ * own the first activation's disposer either.
+ *
  * @param ctx - Host plugin context.
  * @returns disposer removing both routes.
  */
