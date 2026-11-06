@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.9 — 2026-11-06
+
+### Fixed
+
+- Treat the web server's `duplicate exact route` rejection as "already mounted". The market's update verification can load the package through two separate copies with independent module state; the earlier per-server marker could not see the other copy, so verification still aborted startup. The first copy now keeps serving and the tolerated copy's disposer removes nothing.
+
 ## 0.1.8 — 2026-11-05
 
 ### Fixed

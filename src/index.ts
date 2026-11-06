@@ -117,6 +117,32 @@ function targetLanguageOf(req: IncomingMessage, requested: string, locale: unkno
 /** Servers already carrying this plugin's routes; a duplicate mount must not crash. */
 const mounted = new WeakSet<object>();
 
+type WebServer = NonNullable<Context['webServer']>;
+
+/** The path is already served by another copy of this plugin: keep that copy. */
+function isDuplicateRoute(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /duplicate (?:exact|prefix) route/i.test(message);
+}
+
+/**
+ * Register one route, tolerating a duplicate from another module instance.
+ *
+ * The market's update verification can compose the same plugin twice through
+ * separate package copies. A per-server WeakSet cannot see the other copy, so
+ * the server's own duplicate-route error is the only shared signal. Treating
+ * it as "already mounted" keeps the first copy serving instead of aborting
+ * startup.
+ */
+function registerRoute(server: WebServer, route: Parameters<WebServer['register']>[0]): () => void {
+  try {
+    return server.register(route);
+  } catch (error) {
+    if (isDuplicateRoute(error)) return () => {};
+    throw error;
+  }
+}
+
 /**
  * Register the translation routes.
  *
@@ -145,7 +171,7 @@ export function apply(ctx: Context): () => void {
   const translator = (): Translator | undefined => lookup<Translator>('translator');
   const available = () => translator() !== undefined || service() !== undefined;
 
-  const disposeLimits = server.register({
+  const disposeLimits = registerRoute(server, {
     kind: 'exact',
     path: ROUTE_LIMITS,
     handler: async (req, res) => {
@@ -186,7 +212,7 @@ export function apply(ctx: Context): () => void {
     },
   });
 
-  const disposeTranslate = server.register({
+  const disposeTranslate = registerRoute(server, {
     kind: 'exact',
     path: ROUTE_TRANSLATE,
     handler: async (req, res) => {
@@ -254,7 +280,7 @@ export function apply(ctx: Context): () => void {
     },
   });
 
-  const disposeStatus = server.register({
+  const disposeStatus = registerRoute(server, {
     kind: 'exact',
     path: ROUTE_STATUS,
     handler: (req, res) => {

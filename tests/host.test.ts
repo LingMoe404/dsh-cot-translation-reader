@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Context } from '@deepseek-ai/cordis';
@@ -173,5 +173,34 @@ test('a duplicate activation is a no-op instead of a duplicate-route failure', (
   const again = apply(ctx as unknown as Context);
   assert.equal(routes.size, 3, 'a disposed mount can be activated again');
   again();
+  assert.equal(routes.size, 0);
+});
+
+test('two module copies sharing a server keep the first routes instead of failing', async () => {
+  // The market's update verification can load the package along two paths, so
+  // each copy has its own WeakSet. Only the server's duplicate error is shared.
+  const routes = new Map<string, unknown>();
+  const server = {
+    register(route: { path: string }) {
+      if (routes.has(route.path)) throw new Error(`duplicate exact route "${route.path}"`);
+      routes.set(route.path, route);
+      return () => { routes.delete(route.path); };
+    },
+  };
+  const ctx = { webServer: server, get() { return undefined; } } as unknown as Context;
+
+  vi.resetModules();
+  const first = (await import('../src/index.js')).apply;
+  vi.resetModules();
+  const second = (await import('../src/index.js')).apply;
+
+  let disposeFirst: () => void = () => {};
+  let disposeSecond: () => void = () => {};
+  assert.doesNotThrow(() => { disposeFirst = first(ctx); });
+  assert.doesNotThrow(() => { disposeSecond = second(ctx); }, 'a second copy must not abort startup');
+  assert.equal(routes.size, 3, 'one set of routes serves the process');
+  disposeSecond();
+  assert.equal(routes.size, 3, 'the tolerated copy must not remove the live routes');
+  disposeFirst();
   assert.equal(routes.size, 0);
 });
